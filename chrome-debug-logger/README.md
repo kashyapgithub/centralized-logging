@@ -25,6 +25,13 @@ run on any site by default. Add domains in the extension's Settings page.
 
 ## Install
 
+**Agent-driven setup:** see `AGENT_SETUP.md` at the repo root — it's written
+for a coding agent to run directly (schema via `psql`, config via a JSON
+file) instead of clicking through UIs. Only one step there is genuinely
+manual: loading the extension into Chrome itself.
+
+**Manual setup:**
+
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked**, select this `chrome-debug-logger` folder
@@ -35,6 +42,10 @@ run on any site by default. Add domains in the extension's Settings page.
 5. Run `scripts/setup_schema.sql` from the centralized-logging skill against
    that Supabase project if you haven't already — this extension writes into
    the exact same `app_logs` table.
+
+Tip: instead of step 4's manual typing, copy `config.example.json` to
+`config.local.json`, fill in the real values, and the extension picks them
+up automatically on next load — same thing `AGENT_SETUP.md` has an agent do.
 
 ## What gets logged
 

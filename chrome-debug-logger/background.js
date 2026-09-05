@@ -4,7 +4,7 @@
  * changed independently.
  */
 
-import { isAllowed } from "./lib/allowlist.js";
+import { isAllowed, setAllowlist } from "./lib/allowlist.js";
 import {
   attachDebugger,
   detachDebugger,
@@ -14,6 +14,33 @@ import {
 } from "./lib/debugger-capture.js";
 import { logSender } from "./lib/log-sender.js";
 import { createCommandPoller } from "./lib/commands.js";
+
+// -- config seeding, for agent-driven setup ----------------------------------
+// If config.local.json exists (an agent or you copied config.example.json to
+// it and filled in real values), seed chrome.storage from it on startup —
+// so setup can be "edit a file" instead of "type into the Settings page".
+// Never overwrites values already set via the Settings page.
+(async function seedConfigFromFileIfPresent() {
+  const { supabaseUrl } = await chrome.storage.local.get(["supabaseUrl"]);
+  if (supabaseUrl) return; // already configured — don't clobber manual settings
+
+  try {
+    const res = await fetch(chrome.runtime.getURL("config.local.json"));
+    if (!res.ok) return; // no config.local.json — fine, use the Settings page
+    const config = await res.json();
+
+    await chrome.storage.local.set({
+      supabaseUrl: config.supabaseUrl || "",
+      supabaseAnonKey: config.supabaseAnonKey || "",
+    });
+    if (Array.isArray(config.allowlist) && config.allowlist.length > 0) {
+      await setAllowlist(config.allowlist);
+    }
+    console.log("[central-log-capture] seeded settings from config.local.json");
+  } catch {
+    // No config.local.json bundled — silently fall back to the Settings page.
+  }
+})();
 
 // Per-tab metadata the event handler needs but shouldn't have to fetch
 // itself on every single event.
