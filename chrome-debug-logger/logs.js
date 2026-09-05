@@ -1,6 +1,6 @@
 /**
  * logs.js — the "copy-paste into any LLM" viewer. Polls background.js's
- * in-memory ring buffer (no Supabase needed) and renders it live.
+ * in-memory ring buffer (no local server needed) and renders it live.
  */
 
 const POLL_INTERVAL_MS = 1000;

@@ -1,37 +1,32 @@
-# Client Integration — getting logs INTO `app_logs`
+# Client Integration — getting logs INTO the local server
 
-Every app writes events the same way underneath: an HTTPS `POST` to Supabase's
-auto-generated REST endpoint for the `app_logs` table. No custom server to
-write or host — Supabase's PostgREST layer *is* the ingest API.
+Every app writes events the same way underneath: a plain HTTP `POST` to
+`server.py`'s `/logs` endpoint. No API key, no headers beyond
+`Content-Type: application/json` — this is a local, single-user tool, not a
+public API.
 
 ```
-POST {SUPABASE_URL}/rest/v1/app_logs
-Headers:
-  apikey: {SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY}
-  Authorization: Bearer {same key}
-  Content-Type: application/json
-  Prefer: return=minimal
-Body: a JSON object matching the app_logs columns (see database-schema.md)
+POST http://127.0.0.1:4317/logs
+Content-Type: application/json
+Body: a JSON object (or array of objects) matching the `logs` columns
+      (see references/database-schema.md)
 ```
 
-Use the **service key** server-side (trusted environments — it bypasses RLS).
-Use the **anon key** in browser/mobile/anything untrusted — the RLS policy
-restricts it to insert-only, so a leaked key can't read or corrupt history.
+This one recipe is enough for **any language** that can make an HTTP
+request — which is all of them. Below are ready-made versions for the
+common cases; skip straight to "Generic HTTP / cURL" for anything else.
 
-This one recipe is enough for **any language** that can make an HTTPS request
-— which is all of them. Below are ready-made versions for the common cases;
-skip straight to "Generic HTTP / cURL" for anything else.
+If the server runs on a different host/port than the default, set
+`LOG_SERVER_URL` in the environment (both bundled clients read it) or pass
+`server_url`/`serverUrl` explicitly in code.
 
 ---
 
 ## Generic HTTP / cURL (works for literally any language)
 
 ```bash
-curl -X POST "$SUPABASE_URL/rest/v1/app_logs" \
-  -H "apikey: $SUPABASE_SERVICE_KEY" \
-  -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+curl -X POST http://127.0.0.1:4317/logs \
   -H "Content-Type: application/json" \
-  -H "Prefer: return=minimal" \
   -d '{
     "app_name": "my-app",
     "environment": "production",
@@ -47,7 +42,7 @@ curl -X POST "$SUPABASE_URL/rest/v1/app_logs" \
 
 Translate that into whatever HTTP client the language ships with (`fetch`,
 `net/http`, `requests`, `HttpClient`, `Invoke-RestMethod`, ...). There is
-nothing Supabase-specific about the call beyond the two headers.
+nothing exotic about the call — it's the plainest possible JSON POST.
 
 **Fingerprint, computed the same way everywhere:** hash of
 `error_type + ":" + message-with-digits-replaced-by-#`. Any language's
@@ -59,8 +54,8 @@ specific algorithm.
 ## Node.js
 
 Use `scripts/logger_client.js` as-is or as a starting point — zero
-dependencies (built-in `fetch`, Node 18+). It batches writes and flushes on a
-timer so logging never blocks the request path.
+dependencies (built-in `fetch`, Node 18+). It batches writes and flushes on
+a timer so logging never blocks the request path.
 
 ```js
 const { CentralLogger } = require('./logger_client');
@@ -68,18 +63,17 @@ const { CentralLogger } = require('./logger_client');
 const logger = new CentralLogger({
   appName: 'my-node-app',
   environment: process.env.NODE_ENV,
-  supabaseUrl: process.env.SUPABASE_URL,
-  supabaseKey: process.env.SUPABASE_SERVICE_KEY,
+  // serverUrl defaults to http://127.0.0.1:4317 (or LOG_SERVER_URL) — omit unless different
 });
 
 // plain event
-logger.info('server started', { port: 3000 });
+logger.info('server started', { context: { port: 3000 } });
 
 // caught exception — captures stack trace + fingerprint automatically
 try {
   await chargeCard(order);
 } catch (err) {
-  logger.error(err, { orderId: order.id, requestId: req.id });
+  logger.error(err, { context: { orderId: order.id }, requestId: req.id });
 }
 
 // global safety net — catches what nothing else caught
@@ -98,8 +92,7 @@ from logger_client import CentralLogger
 logger = CentralLogger(
     app_name="my-python-app",
     environment=os.environ.get("ENV", "production"),
-    supabase_url=os.environ["SUPABASE_URL"],
-    supabase_key=os.environ["SUPABASE_SERVICE_KEY"],
+    # server_url defaults to http://127.0.0.1:4317 (or LOG_SERVER_URL) — omit unless different
 )
 
 logger.info("worker started", context={"pid": os.getpid()})
@@ -118,8 +111,8 @@ async def on_error(request, exc):
 
 ## Go
 
-No bundled client (keep the skill lean) — the generic pattern is short enough
-to inline directly:
+No bundled client (keep the skill lean) — the generic pattern is short
+enough to inline directly:
 
 ```go
 type LogEvent struct {
@@ -135,12 +128,8 @@ type LogEvent struct {
 
 func LogEvent(ev LogEvent) error {
     body, _ := json.Marshal(ev)
-    req, _ := http.NewRequest("POST", os.Getenv("SUPABASE_URL")+"/rest/v1/app_logs", bytes.NewReader(body))
-    key := os.Getenv("SUPABASE_SERVICE_KEY")
-    req.Header.Set("apikey", key)
-    req.Header.Set("Authorization", "Bearer "+key)
+    req, _ := http.NewRequest("POST", "http://127.0.0.1:4317/logs", bytes.NewReader(body))
     req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Prefer", "return=minimal")
     _, err := http.DefaultClient.Do(req)
     return err
 }
@@ -148,19 +137,13 @@ func LogEvent(ev LogEvent) error {
 
 ## Browser / client-side JS
 
-Same shape, but use the **anon key** (never ship the service key to a
-browser) and keep payloads free of anything sensitive, since RLS here is
-insert-only, not "trusted":
+Same shape — the local server's CORS is wide open, so this works straight
+from a page:
 
 ```js
-fetch(`${SUPABASE_URL}/rest/v1/app_logs`, {
+fetch('http://127.0.0.1:4317/logs', {
   method: 'POST',
-  headers: {
-    apikey: SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=minimal',
-  },
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     app_name: 'my-web-app',
     environment: 'production',
@@ -171,6 +154,10 @@ fetch(`${SUPABASE_URL}/rest/v1/app_logs`, {
   }),
 });
 ```
+
+(For a full browser capture solution rather than hand-adding this to a
+page, see the `chrome-debug-logger` extension in the sibling folder — it
+does this automatically for any site you allowlist.)
 
 ---
 

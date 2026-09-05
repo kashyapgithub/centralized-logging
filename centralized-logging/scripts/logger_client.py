@@ -1,20 +1,14 @@
 """
 logger_client.py — centralized logging client for Python apps.
 
-Copy this file into the target app (or `pip install requests` and import it
-directly if the app's structure allows). It batches events in memory and
-flushes them to Supabase in the background, so a log call never blocks the
-request/response path.
+Talks to server.py over plain HTTP — no account, no API key. Copy this file
+into the target app. Batches events in memory and flushes them in the
+background, so a log call never blocks the request/response path.
 
 Usage:
     from logger_client import CentralLogger
 
-    logger = CentralLogger(
-        app_name="my-python-app",
-        environment="production",
-        supabase_url=os.environ["SUPABASE_URL"],
-        supabase_key=os.environ["SUPABASE_SERVICE_KEY"],
-    )
+    logger = CentralLogger(app_name="my-python-app")   # defaults to http://127.0.0.1:4317
 
     logger.info("worker started", context={"pid": os.getpid()})
     logger.warn("slow query", context={"duration_ms": 4200})
@@ -45,6 +39,7 @@ from typing import Any, Optional
 import requests
 
 _DIGITS_RE = re.compile(r"\d+")
+DEFAULT_SERVER_URL = os.environ.get("LOG_SERVER_URL", "http://127.0.0.1:4317")
 
 
 def _fingerprint(error_type: Optional[str], message: str) -> str:
@@ -60,28 +55,21 @@ def _fingerprint(error_type: Optional[str], message: str) -> str:
 
 class CentralLogger:
     """
-    Batched, non-blocking logger that writes rows into the `app_logs` table
-    via Supabase's REST (PostgREST) endpoint.
+    Batched, non-blocking logger that writes rows into the local log
+    server (server.py) via a plain HTTP POST — no headers, no auth.
     """
 
     def __init__(
         self,
         app_name: str,
-        supabase_url: str,
-        supabase_key: str,
+        server_url: str = DEFAULT_SERVER_URL,
         environment: str = "production",
         flush_interval_seconds: float = 2.0,
         max_batch_size: int = 50,
     ) -> None:
         self.app_name = app_name
         self.environment = environment
-        self._endpoint = f"{supabase_url.rstrip('/')}/rest/v1/app_logs"
-        self._headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        }
+        self._endpoint = f"{server_url.rstrip('/')}/logs"
         self._host = socket.gethostname()
         self._queue: "queue.Queue[dict]" = queue.Queue()
         self._max_batch_size = max_batch_size
@@ -181,15 +169,10 @@ class CentralLogger:
         if not batch:
             return
         try:
-            requests.post(
-                self._endpoint,
-                headers=self._headers,
-                data=json.dumps(batch),
-                timeout=5,
-            )
+            requests.post(self._endpoint, json=batch, timeout=5)
         except requests.RequestException:
-            # Logging must never crash the app it's logging for. If Supabase
-            # is unreachable, drop the batch silently rather than raise.
+            # Logging must never crash the app it's logging for. If the log
+            # server isn't running, drop the batch silently rather than raise.
             pass
 
     def flush(self) -> None:

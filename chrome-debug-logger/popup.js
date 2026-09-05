@@ -29,10 +29,8 @@ async function getCurrentHostname() {
 }
 
 /**
- * Reads recent error/fatal rows for the current tab's hostname straight
- * from Supabase. Requires scripts/remote_control_schema.sql to have been
- * run (it's what grants the anon key SELECT on app_logs — by default the
- * key is insert-only).
+ * Reads recent error/fatal rows for the current tab's hostname from the
+ * local log server.
  */
 async function renderRecentErrors() {
   const listEl = document.getElementById("errorList");
@@ -44,27 +42,21 @@ async function renderRecentErrors() {
     return;
   }
 
-  const { supabaseUrl, supabaseAnonKey } = await chrome.storage.local.get([
-    "supabaseUrl",
-    "supabaseAnonKey",
-  ]);
-  if (!supabaseUrl || !supabaseAnonKey) {
-    listEl.innerHTML = '<li class="empty">Set up Supabase in Settings first.</li>';
+  const { serverUrl } = await chrome.storage.local.get(["serverUrl"]);
+  if (!serverUrl) {
+    listEl.innerHTML = '<li class="empty">Set up the log server URL in Settings first.</li>';
     return;
   }
 
   try {
     const params = new URLSearchParams({
-      app_name: `eq.${hostname}`,
-      level: "in.(error,fatal)",
-      order: "created_at.desc",
+      app: hostname,
+      level: "error,fatal",
+      minutes: "1440",
       limit: "5",
-      select: "created_at,message",
     });
-    const res = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/app_logs?${params}`, {
-      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
-    });
-    const rows = await res.json();
+    const res = await fetch(`${serverUrl.replace(/\/$/, "")}/logs/recent?${params}`);
+    const { rows } = await res.json();
 
     if (!Array.isArray(rows) || rows.length === 0) {
       listEl.innerHTML = `<li class="empty">No recent errors for ${hostname}.</li>`;
@@ -77,7 +69,7 @@ async function renderRecentErrors() {
       listEl.appendChild(li);
     }
   } catch {
-    listEl.innerHTML = '<li class="empty">Couldn\'t reach Supabase — check your connection.</li>';
+    listEl.innerHTML = '<li class="empty">Couldn\'t reach the log server — is it running?</li>';
   }
 }
 

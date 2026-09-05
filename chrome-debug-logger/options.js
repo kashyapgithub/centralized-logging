@@ -1,7 +1,6 @@
 import { getAllowlist, setAllowlist } from "./lib/allowlist.js";
 
-const supabaseUrlInput = document.getElementById("supabaseUrl");
-const supabaseAnonKeyInput = document.getElementById("supabaseAnonKey");
+const serverUrlInput = document.getElementById("serverUrl");
 const newDomainInput = document.getElementById("newDomain");
 const domainListEl = document.getElementById("domainList");
 const statusEl = document.getElementById("status");
@@ -9,12 +8,8 @@ const statusEl = document.getElementById("status");
 let currentDomains = [];
 
 async function loadSettings() {
-  const { supabaseUrl = "", supabaseAnonKey = "" } = await chrome.storage.local.get([
-    "supabaseUrl",
-    "supabaseAnonKey",
-  ]);
-  supabaseUrlInput.value = supabaseUrl;
-  supabaseAnonKeyInput.value = supabaseAnonKey;
+  const { serverUrl = "http://127.0.0.1:4317" } = await chrome.storage.local.get(["serverUrl"]);
+  serverUrlInput.value = serverUrl;
   currentDomains = await getAllowlist();
   renderDomainList();
 }
@@ -46,10 +41,7 @@ document.getElementById("addDomain").addEventListener("click", () => {
 });
 
 document.getElementById("save").addEventListener("click", async () => {
-  await chrome.storage.local.set({
-    supabaseUrl: supabaseUrlInput.value.trim(),
-    supabaseAnonKey: supabaseAnonKeyInput.value.trim(),
-  });
+  await chrome.storage.local.set({ serverUrl: serverUrlInput.value.trim() });
   await setAllowlist(currentDomains);
   statusEl.textContent = "Saved.";
   setTimeout(() => (statusEl.textContent = ""), 2000);

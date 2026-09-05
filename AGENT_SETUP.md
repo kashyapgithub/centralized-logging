@@ -2,53 +2,44 @@
 
 This file is written to be handed to a coding agent (Claude Code, Cursor,
 etc.) sitting in a terminal with this repo cloned, not to be read by a human
-clicking through a UI. It says exactly what to run and what to edit.
+clicking through a UI.
 
-## What the human needs to provide first
+There's no account or cloud project anywhere in this system — the backend
+is one Python script. That means almost everything below is scriptable.
+Only the very last step (loading the extension into Chrome) is genuinely
+manual.
 
-There's no way around one fact: creating the Supabase project itself
-requires a human to sign in via the browser at supabase.com (no API can
-create an account or a project on someone's behalf without their login).
-Ask the human for these three things before doing anything else:
-
-- `SUPABASE_DB_URL` — Postgres connection string. Dashboard → Project
-  Settings → Database → Connection string → URI.
-- `SUPABASE_URL` — Dashboard → Project Settings → API → Project URL.
-- `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_KEY` — same API settings page.
-
-Everything below this point is scriptable — no web UI required.
-
-## Step 1 — Apply the database schema
+## Step 1 — Start the log server
 
 ```bash
-SUPABASE_DB_URL="<the connection string>" bash centralized-logging/scripts/setup.sh
+python3 centralized-logging/scripts/server.py &
 ```
 
-Add `--with-remote-control` on the end if the human also wants the
-extension's two-way link (popup read-back + live commands). That flag
-applies `remote_control_schema.sql`, which widens the anon key from
-insert-only to insert+read — read the comment at the top of that file and
-mention the trade-off to the human before passing this flag by default.
+Standard library only — no `pip install` needed. It listens on
+`127.0.0.1:4317` by default and creates `logs.db` next to itself on first
+run. Confirm it's up:
 
-Verify it worked: the script's own sanity check prints a row count from
-`app_logs` at the end. If `psql` isn't installed, install it first
-(`apt-get install postgresql-client` / `brew install libpq`, depending on
-the environment) rather than skipping the step.
+```bash
+curl http://127.0.0.1:4317/
+# {"ok": true, "db": "/path/to/logs.db"}
+```
+
+Override the port/host/db path with `LOG_SERVER_PORT`, `LOG_SERVER_HOST`,
+or `LOG_DB_PATH` if the human needs something other than the default.
 
 ## Step 2 — Wire the backend app
 
 This part is genuinely code-editing, not scriptable in general, since it
 depends entirely on the target app's structure. Do this yourself, directly:
 
-1. Add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to the target app's env
-   file / secrets config.
-2. If the app is Node or Python, copy the matching file from
+1. If the app is Node or Python, copy the matching file from
    `centralized-logging/scripts/logger_client.{js,py}` into the project and
-   import it.
-3. For any other language, follow `centralized-logging/references/client-integration.md`
+   import it. Both default to `http://127.0.0.1:4317` — only pass
+   `serverUrl`/`server_url` explicitly if the server runs somewhere else.
+2. For any other language, follow `centralized-logging/references/client-integration.md`
    — it's a plain HTTP POST, implement it with whatever HTTP client that
    language already uses.
-4. Find the app's global error handler / uncaught-exception hook (or add
+3. Find the app's global error handler / uncaught-exception hook (or add
    one if it doesn't have one) and call the logger from there, so crashes
    get logged automatically rather than only where a developer remembered
    a log line.
@@ -59,20 +50,19 @@ depends entirely on the target app's structure. Do this yourself, directly:
 cp chrome-debug-logger/config.example.json chrome-debug-logger/config.local.json
 ```
 
-Edit `config.local.json` and fill in the real values:
+Edit `config.local.json`:
 
 ```json
 {
-  "supabaseUrl": "<SUPABASE_URL>",
-  "supabaseAnonKey": "<SUPABASE_ANON_KEY>",
+  "serverUrl": "http://127.0.0.1:4317",
   "allowlist": ["localhost", "the-humans-actual-domain.com"]
 }
 ```
 
-`config.local.json` is gitignored — never commit it. The extension reads
-this file once on startup and seeds its settings from it automatically, but
-only if nothing has been set yet (it never overwrites values the human
-already entered by hand in the Settings page).
+`config.local.json` is gitignored — the extension reads it once on startup
+and seeds its settings from it automatically, but only if nothing has been
+set yet (it never overwrites values the human already entered by hand in
+the Settings page).
 
 ## Step 4 — The one step that's actually manual
 
@@ -94,6 +84,6 @@ python3 centralized-logging/scripts/query_logs.py recent --app <hostname-or-back
 
 If the human just reloaded an allowlisted tab or the backend app just
 started, this should show at least one row. If it's empty after a minute,
-walk through: is `config.local.json` filled in correctly? Did the tab
-actually get the "being debugged" banner? Is `SUPABASE_SERVICE_KEY` set in
-the shell running `query_logs.py`?
+check in this order: is the server actually running (`curl http://127.0.0.1:4317/`)?
+Is `config.local.json` filled in correctly? Did the tab actually get the
+"being debugged" banner?

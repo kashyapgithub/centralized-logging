@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Central Log Capture",
   "version": "1.0.0",
-  "description": "Captures console output, uncaught exceptions, and failed network requests from allowlisted sites into your centralized Supabase log table — no more manually checking DevTools.",
+  "description": "Captures console output, uncaught exceptions, and failed network requests from allowlisted sites into your local centralized-logging server — no more manually checking DevTools.",
 
   "permissions": ["debugger", "storage", "tabs", "alarms"],
 

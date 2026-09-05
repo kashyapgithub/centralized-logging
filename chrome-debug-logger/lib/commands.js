@@ -1,14 +1,12 @@
 /**
  * commands.js — lets a trusted external client (Claude, via
  * `query_logs.py command`) tell this extension to do something, by way of
- * a small `extension_commands` table in the same Supabase project.
+ * the local log server's small command queue (server.py's `commands` table).
  *
- * Flow: query_logs.py INSERTs a row with the service key -> this extension
- * polls for pending rows with the anon key -> executes -> PATCHes the row
- * with status + result -> query_logs.py (still polling) prints the result.
- *
- * Requires scripts/remote_control_schema.sql to have been run — see that
- * file for the RLS trade-off it makes before enabling this.
+ * Flow: query_logs.py POSTs /commands on the local server -> this
+ * extension polls GET /commands/pending -> executes -> PATCHes
+ * /commands/<id> with status + result -> query_logs.py (still polling)
+ * prints the result.
  */
 
 import { isAllowed } from "./allowlist.js";
@@ -20,12 +18,9 @@ import {
 } from "./debugger-capture.js";
 import { logSender } from "./log-sender.js";
 
-async function getSupabaseConfig() {
-  const { supabaseUrl, supabaseAnonKey } = await chrome.storage.local.get([
-    "supabaseUrl",
-    "supabaseAnonKey",
-  ]);
-  return { supabaseUrl, supabaseAnonKey };
+async function getServerUrl() {
+  const { serverUrl } = await chrome.storage.local.get(["serverUrl"]);
+  return serverUrl;
 }
 
 /**
@@ -36,26 +31,23 @@ async function getSupabaseConfig() {
  */
 export function createCommandPoller({ findTabIdByHostname, getAttachedHostnames }) {
   return async function pollAndExecuteCommands() {
-    const { supabaseUrl, supabaseAnonKey } = await getSupabaseConfig();
-    if (!supabaseUrl || !supabaseAnonKey) return;
+    const serverUrl = await getServerUrl();
+    if (!serverUrl) return;
 
     let pending;
     try {
-      const res = await fetch(
-        `${supabaseUrl.replace(/\/$/, "")}/rest/v1/extension_commands` +
-          `?status=eq.pending&order=created_at.asc&limit=20`,
-        { headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` } }
-      );
-      pending = await res.json();
+      const res = await fetch(`${serverUrl.replace(/\/$/, "")}/commands/pending`);
+      const data = await res.json();
+      pending = data.commands;
     } catch (err) {
-      console.warn("[central-log-capture] command poll failed:", err);
+      console.warn("[central-log-capture] command poll failed — is server.py running?", err);
       return;
     }
     if (!Array.isArray(pending) || pending.length === 0) return;
 
     for (const cmd of pending) {
       const outcome = await executeCommand(cmd, { findTabIdByHostname, getAttachedHostnames });
-      await reportCommandOutcome(supabaseUrl, supabaseAnonKey, cmd.id, outcome);
+      await reportCommandOutcome(serverUrl, cmd.id, outcome);
     }
   };
 }
@@ -118,17 +110,12 @@ async function executeCommand(cmd, { findTabIdByHostname, getAttachedHostnames }
   }
 }
 
-async function reportCommandOutcome(supabaseUrl, supabaseAnonKey, id, { status, result }) {
+async function reportCommandOutcome(serverUrl, id, { status, result }) {
   try {
-    await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/extension_commands?id=eq.${id}`, {
+    await fetch(`${serverUrl.replace(/\/$/, "")}/commands/${id}`, {
       method: "PATCH",
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({ status, result, completed_at: new Date().toISOString() }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, result }),
     });
   } catch (err) {
     console.warn("[central-log-capture] couldn't report command outcome:", err);

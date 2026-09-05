@@ -1,19 +1,15 @@
 /**
  * logger_client.js — centralized logging client for Node.js apps.
  *
- * Zero dependencies (uses the built-in `fetch`, Node 18+). Copy this file
- * into the target app. Batches events in memory and flushes on a timer, so
- * a log call never blocks the request/response path.
+ * Talks to server.py over plain HTTP — no account, no API key. Zero
+ * dependencies (uses the built-in `fetch`, Node 18+). Copy this file into
+ * the target app. Batches events in memory and flushes on a timer, so a
+ * log call never blocks the request/response path.
  *
  * Usage:
  *   const { CentralLogger } = require('./logger_client');
  *
- *   const logger = new CentralLogger({
- *     appName: 'my-node-app',
- *     environment: process.env.NODE_ENV,
- *     supabaseUrl: process.env.SUPABASE_URL,
- *     supabaseKey: process.env.SUPABASE_SERVICE_KEY,
- *   });
+ *   const logger = new CentralLogger({ appName: 'my-node-app' }); // defaults to http://127.0.0.1:4317
  *
  *   logger.info('server started', { context: { port: 3000 } });
  *
@@ -28,6 +24,8 @@
 
 const os = require('os');
 const crypto = require('crypto');
+
+const DEFAULT_SERVER_URL = process.env.LOG_SERVER_URL || 'http://127.0.0.1:4317';
 
 /**
  * Hash (errorType + message-with-digits-stripped) so repeats of the same
@@ -44,29 +42,21 @@ class CentralLogger {
   /**
    * @param {object} opts
    * @param {string} opts.appName
-   * @param {string} opts.supabaseUrl
-   * @param {string} opts.supabaseKey
+   * @param {string} [opts.serverUrl] defaults to http://127.0.0.1:4317 (or LOG_SERVER_URL)
    * @param {string} [opts.environment='production']
    * @param {number} [opts.flushIntervalMs=2000]
    * @param {number} [opts.maxBatchSize=50]
    */
   constructor({
     appName,
-    supabaseUrl,
-    supabaseKey,
+    serverUrl = DEFAULT_SERVER_URL,
     environment = 'production',
     flushIntervalMs = 2000,
     maxBatchSize = 50,
   }) {
     this.appName = appName;
     this.environment = environment;
-    this.endpoint = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/app_logs`;
-    this.headers = {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    };
+    this.endpoint = `${serverUrl.replace(/\/$/, '')}/logs`;
     this.host = os.hostname();
     this.maxBatchSize = maxBatchSize;
     this.queue = [];
@@ -161,12 +151,12 @@ class CentralLogger {
     try {
       await fetch(this.endpoint, {
         method: 'POST',
-        headers: this.headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(batch),
       });
     } catch {
       // Logging must never crash the app it's logging for — drop silently
-      // if Supabase is unreachable rather than throw.
+      // if the log server isn't reachable rather than throw.
     }
   }
 

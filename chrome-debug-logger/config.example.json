@@ -1,5 +1,4 @@
 {
-  "supabaseUrl": "",
-  "supabaseAnonKey": "",
+  "serverUrl": "http://127.0.0.1:4317",
   "allowlist": []
 }

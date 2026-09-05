@@ -1,10 +1,13 @@
 # Central Log Capture (Chrome extension)
 
 Captures console output, uncaught exceptions, and failed network requests
-from sites you choose — into the same `app_logs` Supabase table used by the
-[`centralized-logging`](../centralized-logging) skill. So instead of opening
+from sites you choose — into the same local log server used by the
+[`centralized-logging`](../centralized-logging) skill. Instead of opening
 DevTools every time something breaks on a site you're building, you (or the
 agent) can just run `query_logs.py recent --app <hostname>`.
+
+No cloud account anywhere in this — the "backend" is one Python script
+(`centralized-logging/scripts/server.py`) running on your own machine.
 
 ## How it works
 
@@ -25,27 +28,24 @@ run on any site by default. Add domains in the extension's Settings page.
 
 ## Install
 
-**Agent-driven setup:** see `AGENT_SETUP.md` at the repo root — it's written
-for a coding agent to run directly (schema via `psql`, config via a JSON
-file) instead of clicking through UIs. Only one step there is genuinely
-manual: loading the extension into Chrome itself.
+**Agent-driven setup:** see `AGENT_SETUP.md` at the repo root — a coding
+agent can start the server and write `config.local.json` for you. Only one
+step is genuinely manual: loading the extension into Chrome itself.
 
 **Manual setup:**
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**, select this `chrome-debug-logger` folder
-4. Click the extension's icon → **Settings**:
-   - Paste your Supabase URL and **anon** key (same project as the
-     centralized-logging skill — never paste the service key here)
+1. Start the log server: `python3 centralized-logging/scripts/server.py`
+   (defaults to `http://127.0.0.1:4317`, no account needed).
+2. Open `chrome://extensions`
+3. Enable **Developer mode** (top right)
+4. Click **Load unpacked**, select this `chrome-debug-logger` folder
+5. Click the extension's icon → **Settings**:
+   - Confirm the server URL matches what `server.py` printed on startup
    - Add the domain(s) you want captured, e.g. `localhost`, `myapp.com`
-5. Run `scripts/setup_schema.sql` from the centralized-logging skill against
-   that Supabase project if you haven't already — this extension writes into
-   the exact same `app_logs` table.
 
-Tip: instead of step 4's manual typing, copy `config.example.json` to
-`config.local.json`, fill in the real values, and the extension picks them
-up automatically on next load — same thing `AGENT_SETUP.md` has an agent do.
+Tip: instead of typing into Settings, copy `config.example.json` to
+`config.local.json` and fill in real values — the extension picks it up
+automatically on next load. `config.local.json` is gitignored.
 
 ## What gets logged
 
@@ -57,8 +57,8 @@ up automatically on next load — same thing `AGENT_SETUP.md` has an agent do.
 | Failed or 4xx/5xx network responses | `level: warn` (4xx) or `error` (5xx), with status + URL in `context` |
 
 Every row also gets `app_name` = the site's hostname and
-`environment: "browser"`, so it sits in the same table as your backend logs
-without colliding with them.
+`environment: "browser"`, so it sits in the same log server as your backend
+logs without colliding with them.
 
 `localStorage` is only snapshotted and attached to `context.local_storage`
 for actual errors — not on every console line — to avoid scraping it
@@ -68,7 +68,7 @@ continuously.
 
 Click the extension icon → **Open full log viewer**. This opens a page that
 reads straight from the in-memory buffer this extension already keeps per
-tab — **it works with zero Supabase configuration**, live, for whatever
+tab — **it works even if the log server isn't running**, live, for whatever
 allowlisted site you have open:
 
 - Pick the site from the dropdown at the top.
@@ -79,42 +79,43 @@ allowlisted site you have open:
   shown and puts it on your clipboard — paste it straight into ChatGPT,
   Claude, or any other assistant to get help with what broke.
 - **Clear** wipes that tab's buffer (doesn't touch anything already sent to
-  Supabase).
+  the log server).
 
 This buffer is intentionally separate from what gets forwarded to the
 backend: console output, exceptions, and browser log entries always get
-sent to Supabase (same as before); network responses/failures only get sent
-if they're actual problems (4xx/5xx or failed); but *everything*, including
-successful 200s and raw outgoing requests, shows up in this local viewer.
-The buffer holds the last 500 events per tab and resets if the tab closes
-or the extension reloads — it's a debugging aid, not a persistent record
-(that's what the Supabase side is for).
+sent to the log server (if it's running); network responses/failures only
+get sent if they're actual problems (4xx/5xx or failed); but *everything*,
+including successful 200s and raw outgoing requests, shows up in this local
+viewer. The buffer holds the last 500 events per tab and resets if the tab
+closes or the extension reloads — it's a debugging aid, not a persistent
+record (that's what the log server's `logs.db` is for).
 
 ## Talking to Claude / query_logs.py
 
-Two extra things become possible once you run
-`scripts/remote_control_schema.sql` from the centralized-logging skill
-(this is optional — read the trade-off comment at the top of that file
-first, it widens the anon key from insert-only to insert+read):
+Two things this extension can do beyond passive logging:
 
-1. **The popup reads back recent errors** for whatever site you're currently
-   on, straight from Supabase — no need to run the CLI just to eyeball
-   what's broken.
+1. **The popup reads back recent errors** for whatever site you're
+   currently on, straight from the log server — no need to run the CLI
+   just to eyeball what's broken.
 2. **Claude can send this extension live commands** via
-   `python3 scripts/query_logs.py command --action <action> --app <hostname>`:
+   `python3 query_logs.py command --action <action> --app <hostname>`:
    - `status` — which hostnames are currently attached
    - `flush` — send whatever's queued right now instead of waiting
    - `attach` / `detach` — start/stop capturing a specific open tab
    - `localstorage_snapshot` — grab that tab's localStorage on demand
 
-   This works by polling: the extension checks the `extension_commands`
-   table roughly every 30 seconds (in dev/unpacked mode) and executes
-   anything pending, so there can be a short delay between issuing a
-   command and seeing the result — the CLI polls for you and prints the
-   result once it lands.
+   This works by polling: the extension checks the server's command queue
+   roughly every 30 seconds (in dev/unpacked mode) and executes anything
+   pending, so there can be a short delay between issuing a command and
+   seeing the result — the CLI polls for you and prints the result once it
+   lands.
 
+## Known limitations
 
-
+- **The log server must be running** for anything to reach the backend —
+  if it's not, the popup's "recent errors" and any command you send will
+  just fail quietly (the console log viewer still works regardless, since
+  it's fully local to the extension).
 - **Service worker suspension**: Chrome can suspend the extension's
   background service worker when idle. Queued-but-unsent logs from a quiet
   tab can be lost if that happens before the once-a-minute flush alarm

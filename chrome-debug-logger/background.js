@@ -21,18 +21,15 @@ import { createCommandPoller } from "./lib/commands.js";
 // so setup can be "edit a file" instead of "type into the Settings page".
 // Never overwrites values already set via the Settings page.
 (async function seedConfigFromFileIfPresent() {
-  const { supabaseUrl } = await chrome.storage.local.get(["supabaseUrl"]);
-  if (supabaseUrl) return; // already configured — don't clobber manual settings
+  const { serverUrl } = await chrome.storage.local.get(["serverUrl"]);
+  if (serverUrl) return; // already configured — don't clobber manual settings
 
   try {
     const res = await fetch(chrome.runtime.getURL("config.local.json"));
     if (!res.ok) return; // no config.local.json — fine, use the Settings page
     const config = await res.json();
 
-    await chrome.storage.local.set({
-      supabaseUrl: config.supabaseUrl || "",
-      supabaseAnonKey: config.supabaseAnonKey || "",
-    });
+    await chrome.storage.local.set({ serverUrl: config.serverUrl || "" });
     if (Array.isArray(config.allowlist) && config.allowlist.length > 0) {
       await setAllowlist(config.allowlist);
     }
@@ -48,8 +45,8 @@ const tabHostnames = new Map(); // tabId -> hostname
 const tabSessions = new Map(); // tabId -> a rough per-navigation session id
 
 // In-memory ring buffer per tab, purely local — this is what makes the log
-// viewer work instantly with zero Supabase setup. Capped so a chatty tab
-// can't grow this without bound.
+// viewer work instantly with zero server round-trips. Capped so a chatty
+// tab can't grow this without bound.
 const MAX_BUFFERED_ROWS = 500;
 const localLogs = new Map(); // tabId -> row[]
 
@@ -113,8 +110,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // -- remote commands, from query_logs.py's `command` subcommand ---------------
-// Requires scripts/remote_control_schema.sql to have been run once — see
-// that file for what it adds and the RLS trade-off it makes.
 
 function findTabIdByHostname(hostname) {
   for (const [tabId, host] of tabHostnames.entries()) {

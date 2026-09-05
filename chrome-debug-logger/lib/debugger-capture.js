@@ -104,7 +104,7 @@ async function captureLocalStorageSnapshot(tabId) {
 /**
  * Builds the chrome.debugger.onEvent listener. Every event that matters
  * gets recorded into the local in-memory buffer (recordLocal) so the
- * standalone log viewer works instantly, with zero Supabase setup. Only a
+ * standalone log viewer works instantly, with zero server round-trips. Only a
  * subset also gets forwarded to the backend (logSender) — raw network
  * *requests* and successful responses stay viewer-only, since shipping
  * every request on a busy page to the DB would drown out the real
@@ -205,7 +205,7 @@ export function createEventHandler({ getTabHostname, getSessionId, recordLocal }
     };
 
     // Always goes in the local buffer -> the log viewer sees it instantly,
-    // no Supabase configuration required.
+    // no external setup required beyond running server.py.
     recordLocal(tabId, row);
 
     // Only the subset worth persisting goes to the backend table.
