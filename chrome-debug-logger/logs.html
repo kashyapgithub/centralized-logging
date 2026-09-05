@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Central Log Capture — Viewer</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif; margin: 0; padding: 16px;
+      background: #0f1115; color: #e4e4e4;
+    }
+    header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    h1 { font-size: 15px; margin: 0; white-space: nowrap; }
+    select, button {
+      font-size: 13px; padding: 5px 10px; border-radius: 4px; border: 1px solid #333;
+      background: #1c1f26; color: #e4e4e4; cursor: pointer;
+    }
+    button.primary { background: #2563eb; border-color: #2563eb; color: white; }
+    #filters { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 10px; color: #aaa; }
+    #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    #copyStatus { font-size: 12px; color: #4ade80; }
+    #log {
+      font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12.5px;
+      background: #14161c; border: 1px solid #2a2d36; border-radius: 6px;
+      height: 70vh; overflow-y: auto; padding: 8px;
+    }
+    .row { padding: 3px 4px; border-bottom: 1px solid #1c1f26; white-space: pre-wrap; word-break: break-word; }
+    .row:hover { background: #1a1d24; }
+    .time { color: #777; margin-right: 8px; }
+    .level { font-weight: 600; margin-right: 6px; padding: 0 4px; border-radius: 3px; }
+    .level-info, .level-debug { color: #7dd3fc; }
+    .level-warn { color: #facc15; }
+    .level-error, .level-fatal { color: #f87171; }
+    .stack { color: #999; margin: 2px 0 4px 20px; }
+    .empty { color: #666; padding: 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Central Log Capture</h1>
+    <select id="hostnameSelect"></select>
+    <button id="copyBtn" class="primary">Copy visible logs</button>
+    <button id="clearBtn">Clear</button>
+    <span id="copyStatus"></span>
+  </header>
+
+  <div id="filters">
+    <label><input type="checkbox" data-type="console" checked /> Console</label>
+    <label><input type="checkbox" data-type="exception" checked /> Exceptions</label>
+    <label><input type="checkbox" data-type="browser-log" checked /> Browser log</label>
+    <label><input type="checkbox" data-type="network-response" checked /> Network responses</label>
+    <label><input type="checkbox" data-type="network-failed" checked /> Network failures</label>
+    <label><input type="checkbox" data-type="network-request" /> Raw requests (noisy)</label>
+  </div>
+
+  <div id="log"><div class="empty">Pick a site above — only allowlisted, currently-open tabs show up here.</div></div>
+
+  <script src="logs.js"></script>
+</body>
+</html>

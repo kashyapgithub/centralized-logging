@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Central Log Capture — Settings</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; color: #1a1a1a; }
+    h1 { font-size: 18px; }
+    section { margin-bottom: 24px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 6px 8px; margin-bottom: 10px; box-sizing: border-box;
+      border: 1px solid #ccc; border-radius: 4px;
+    }
+    #domainList { list-style: none; padding: 0; margin: 8px 0; }
+    #domainList li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    #domainList button { border: none; background: none; color: #c0392b; cursor: pointer; }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+    button.primary {
+      background: #2563eb; color: white; border: none; padding: 8px 14px;
+      border-radius: 4px; cursor: pointer;
+    }
+    #status { font-size: 13px; color: #16a34a; margin-top: 8px; }
+    p.hint { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Central Log Capture — Settings</h1>
+
+  <section>
+    <h2>Supabase connection</h2>
+    <p class="hint">
+      Same project as your centralized-logging skill. Use the <strong>anon</strong> key
+      here — never the service key — since it's what gets stored in this extension.
+    </p>
+    <label for="supabaseUrl">Supabase URL</label>
+    <input type="text" id="supabaseUrl" placeholder="https://xxxx.supabase.co" />
+    <label for="supabaseAnonKey">Supabase anon key</label>
+    <input type="password" id="supabaseAnonKey" placeholder="eyJhbGciOi..." />
+  </section>
+
+  <section>
+    <h2>Allowed domains</h2>
+    <p class="hint">
+      The debugger only ever attaches to tabs on these domains (and their
+      subdomains). Everything else is left alone.
+    </p>
+    <div class="row">
+      <input type="text" id="newDomain" placeholder="myapp.com" />
+      <button id="addDomain">Add</button>
+    </div>
+    <ul id="domainList"></ul>
+  </section>
+
+  <button class="primary" id="save">Save settings</button>
+  <div id="status"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
