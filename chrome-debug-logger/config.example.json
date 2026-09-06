@@ -1,4 +1,11 @@
 {
   "serverUrl": "http://127.0.0.1:4317",
-  "allowlist": []
+  "allowlist": [],
+  "forwardConfig": {
+    "console": true,
+    "exceptions": true,
+    "browserLog": true,
+    "networkFailures": true,
+    "networkRaw": false
+  }
 }

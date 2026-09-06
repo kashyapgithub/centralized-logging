@@ -3,23 +3,37 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { font-family: system-ui, sans-serif; width: 260px; padding: 12px; margin: 0; }
+    body { font-family: system-ui, sans-serif; width: 280px; padding: 12px; margin: 0; }
     h1 { font-size: 14px; margin: 0 0 8px; }
     ul { list-style: none; padding: 0; margin: 0 0 10px; font-size: 13px; }
     li { padding: 3px 0; }
     .empty { color: #888; font-size: 13px; }
     button { width: 100%; padding: 6px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; background: #f5f5f5; cursor: pointer; }
     a { font-size: 12px; }
+    #forwardConfig { font-size: 12.5px; margin-bottom: 10px; }
+    #forwardConfig label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+    #forwardConfig .hint { color: #888; font-size: 11px; margin: 4px 0 8px; }
   </style>
 </head>
 <body>
   <h1>Currently capturing</h1>
   <ul id="tabList"></ul>
+
+  <h1>Send to backend server</h1>
+  <p class="hint">The local viewer always shows everything captured, regardless of these — this only controls what also gets forwarded to server.py.</p>
+  <div id="forwardConfig">
+    <label><input type="checkbox" data-key="console" /> Console output</label>
+    <label><input type="checkbox" data-key="exceptions" /> Uncaught exceptions</label>
+    <label><input type="checkbox" data-key="browserLog" /> Browser log entries</label>
+    <label><input type="checkbox" data-key="networkFailures" /> Network failures (4xx/5xx)</label>
+    <label><input type="checkbox" data-key="networkRaw" /> All raw network traffic (noisy)</label>
+  </div>
+
   <h1>Recent errors (this site)</h1>
   <ul id="errorList"></ul>
   <button id="flushBtn">Flush queued logs now</button>
   <button id="openViewerBtn">Open full log viewer</button>
   <p><a href="#" id="openOptions">Settings / allowlist</a></p>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

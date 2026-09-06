@@ -64,6 +64,28 @@ logs without colliding with them.
 for actual errors — not on every console line — to avoid scraping it
 continuously.
 
+## Choosing what gets forwarded to the backend
+
+Every one of the sources above is always captured into the local viewer,
+full stop. Which of them *also* get forwarded to `server.py` is up to
+you: click the extension icon and there's a **"Send to backend server"**
+section with a checkbox per category —
+
+- Console output
+- Uncaught exceptions
+- Browser log entries
+- Network failures (4xx/5xx)
+- All raw network traffic (off by default — noisy)
+
+Toggling any of these applies immediately to the next captured event, no
+save button and no reload needed. This never affects the local viewer —
+turning everything off just means you're using the extension purely as a
+copy-paste tool with nothing persisted to `logs.db`.
+
+An agent (or you) can also preset these via `config.local.json`'s
+`forwardConfig` object instead of clicking checkboxes — see
+`config.example.json` for the shape.
+
 ## Reading logs without any setup — the viewer
 
 Click the extension icon → **Open full log viewer**. This opens a page that

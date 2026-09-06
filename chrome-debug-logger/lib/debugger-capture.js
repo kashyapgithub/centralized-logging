@@ -110,17 +110,18 @@ async function captureLocalStorageSnapshot(tabId) {
  * every request on a busy page to the DB would drown out the real
  * problems it's meant to surface.
  */
-export function createEventHandler({ getTabHostname, getSessionId, recordLocal }) {
+export function createEventHandler({ getTabHostname, getSessionId, recordLocal, getForwardConfig }) {
   return async function onDebuggerEvent(source, method, params) {
     const tabId = source.tabId;
     if (tabId === undefined) return;
 
     let type, level, message, errorType = null, stackTrace = null, context = {}, tags = [];
-    let forwardToBackend = true;
+    let category; // which forwardConfig key decides whether this leaves the browser
 
     switch (method) {
       case "Runtime.consoleAPICalled":
         type = "console";
+        category = "console";
         level = levelFromConsoleType(params.type);
         message = formatConsoleArgs(params.args);
         stackTrace = formatStack(params.stackTrace);
@@ -130,6 +131,7 @@ export function createEventHandler({ getTabHostname, getSessionId, recordLocal }
       case "Runtime.exceptionThrown": {
         const details = params.exceptionDetails;
         type = "exception";
+        category = "exceptions";
         level = "error";
         message = details.exception?.description || details.text || "Uncaught exception";
         errorType = details.exception?.className || "Error";
@@ -141,6 +143,7 @@ export function createEventHandler({ getTabHostname, getSessionId, recordLocal }
       case "Log.entryAdded": {
         const entry = params.entry;
         type = "browser-log";
+        category = "browserLog";
         level = entry.level === "error" ? "error" : entry.level === "warning" ? "warn" : "info";
         message = entry.text;
         errorType = entry.source; // e.g. "network", "javascript", "security"
@@ -149,33 +152,37 @@ export function createEventHandler({ getTabHostname, getSessionId, recordLocal }
         break;
       }
 
-      // Raw outgoing request — viewer-only (this is the "see everything,
-      // like DevTools' Network tab" bit). Off by default in the viewer's
-      // filters since it's high-volume, but there if you want it.
+      // Raw outgoing request — always in the local viewer (that's the "see
+      // everything, like DevTools' Network tab" bit); only forwarded to
+      // the backend if the user has explicitly turned on "raw network
+      // traffic" in the popup, since it's high-volume.
       case "Network.requestWillBeSent":
         type = "network-request";
+        category = "networkRaw";
         level = "debug";
         message = `→ ${params.request.method} ${params.request.url}`;
         context = { method: params.request.method, url: params.request.url };
         tags = ["network", "request"];
-        forwardToBackend = false;
         break;
 
       case "Network.responseReceived": {
         const { response } = params;
         const isProblem = response.status >= 400;
         type = "network-response";
+        // A failure counts under "network failures"; a normal 2xx/3xx only
+        // ships to the backend if "raw network traffic" is turned on too.
+        category = isProblem ? "networkFailures" : "networkRaw";
         level = isProblem ? (response.status >= 500 ? "error" : "warn") : "info";
         message = `← ${response.status} ${response.url}`;
         errorType = isProblem ? "NetworkResponse" : null;
         context = { status: response.status, url: response.url, mimeType: response.mimeType };
         tags = ["network", "response", String(response.status)];
-        forwardToBackend = isProblem; // only failures make it to the backend DB
         break;
       }
 
       case "Network.loadingFailed":
         type = "network-failed";
+        category = "networkFailures";
         level = "error";
         message = `✕ Network request failed: ${params.errorText}`;
         errorType = "NetworkFailure";
@@ -205,11 +212,13 @@ export function createEventHandler({ getTabHostname, getSessionId, recordLocal }
     };
 
     // Always goes in the local buffer -> the log viewer sees it instantly,
-    // no external setup required beyond running server.py.
+    // no external setup required beyond running server.py. The forwarding
+    // toggle only ever restricts what leaves the browser, never what you
+    // can see in the viewer.
     recordLocal(tabId, row);
 
-    // Only the subset worth persisting goes to the backend table.
-    if (forwardToBackend) {
+    const forwardConfig = getForwardConfig();
+    if (forwardConfig[category]) {
       await logSender.enqueue({
         app_name: getTabHostname(tabId) || "unknown-site",
         environment: "browser",

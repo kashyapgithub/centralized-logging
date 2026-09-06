@@ -14,6 +14,21 @@ import {
 } from "./lib/debugger-capture.js";
 import { logSender } from "./lib/log-sender.js";
 import { createCommandPoller } from "./lib/commands.js";
+import { getForwardConfig, setForwardConfig, DEFAULT_FORWARD_CONFIG } from "./lib/forward-config.js";
+
+// Cached synchronously-readable copy of the forwarding config, since the
+// debugger event handler fires far too often to await chrome.storage on
+// every single event. Loaded on startup, kept fresh via storage.onChanged
+// so a change in the popup takes effect immediately — no reload needed.
+let forwardConfigCache = DEFAULT_FORWARD_CONFIG;
+getForwardConfig().then((config) => {
+  forwardConfigCache = config;
+});
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.forwardConfig) {
+    forwardConfigCache = { ...DEFAULT_FORWARD_CONFIG, ...changes.forwardConfig.newValue };
+  }
+});
 
 // -- config seeding, for agent-driven setup ----------------------------------
 // If config.local.json exists (an agent or you copied config.example.json to
@@ -32,6 +47,9 @@ import { createCommandPoller } from "./lib/commands.js";
     await chrome.storage.local.set({ serverUrl: config.serverUrl || "" });
     if (Array.isArray(config.allowlist) && config.allowlist.length > 0) {
       await setAllowlist(config.allowlist);
+    }
+    if (config.forwardConfig && typeof config.forwardConfig === "object") {
+      forwardConfigCache = await setForwardConfig(config.forwardConfig);
     }
     console.log("[central-log-capture] seeded settings from config.local.json");
   } catch {
@@ -64,6 +82,7 @@ const onDebuggerEvent = createEventHandler({
   getTabHostname: (tabId) => tabHostnames.get(tabId),
   getSessionId: (tabId) => tabSessions.get(tabId),
   recordLocal,
+  getForwardConfig: () => forwardConfigCache,
 });
 chrome.debugger.onEvent.addListener(onDebuggerEvent);
 

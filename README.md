@@ -81,22 +81,36 @@ running at all.
 ### Path 2 — forwarding to the backend (needs `server.py` running)
 
 Sending literally everything (including every successful `200 OK`) to the
-backend database would drown out the errors that actually matter. So only
-the meaningful subset gets forwarded to `server.py`'s `/logs` endpoint:
+backend database would drown out the errors that actually matter. So by
+default, only a meaningful subset gets forwarded to `server.py`'s `/logs`
+endpoint — and you can change these defaults yourself, per category, from
+the extension's popup (no options-page digging required):
 
-| Captured everywhere (Path 1) | Also forwarded to the server (Path 2) |
+| Captured everywhere (Path 1) | Forwarded to the server by default (Path 2) |
 |---|---|
-| ✅ console.log / info | ❌ not forwarded — too routine |
-| ✅ console.warn / error | ✅ forwarded |
+| ✅ all console output (log/info/warn/error/debug) | ✅ forwarded |
 | ✅ uncaught exceptions | ✅ forwarded |
 | ✅ browser log entries | ✅ forwarded |
-| ✅ every network request | ❌ not forwarded — high volume, rarely useful after the fact |
-| ✅ successful (2xx) responses | ❌ not forwarded |
+| ✅ every raw network request | ❌ not forwarded — high volume, rarely useful after the fact |
+| ✅ successful (2xx/3xx) responses | ❌ not forwarded |
 | ✅ failed (4xx/5xx) responses | ✅ forwarded |
+
+**Choosing what gets forwarded:** click the extension icon — there's a
+"Send to backend server" section with a checkbox per category (Console
+output, Uncaught exceptions, Browser log entries, Network failures, All
+raw network traffic). Toggling one takes effect immediately, on the very
+next captured event — no save button, no reload. Turning **everything**
+off just means you're using this purely as the local copy-paste viewer
+(Path 1 still works exactly the same); turning **raw network traffic** on
+means literally every request/response, including 200s, starts landing in
+`logs.db` too — useful for a deep one-off investigation, noisy to leave on
+permanently.
 
 This is why the two paths exist separately: the **viewer** is for "let me
 see everything happening right now," and the **backend** is for "let me
-search/trace/group this later, alongside my server's own logs."
+search/trace/group this later, alongside my server's own logs" — and the
+popup toggle is what lets you decide, category by category, which things
+graduate from the first list to the second.
 
 ### The two-way link
 

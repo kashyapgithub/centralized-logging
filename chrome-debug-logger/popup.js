@@ -1,3 +1,5 @@
+import { getForwardConfig, setForwardConfig } from "./lib/forward-config.js";
+
 async function renderStatus() {
   const { attachedTabs } = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   const listEl = document.getElementById("tabList");
@@ -88,6 +90,22 @@ document.getElementById("openOptions").addEventListener("click", (e) => {
 document.getElementById("openViewerBtn").addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") });
 });
+
+// -- forward-to-backend toggles -----------------------------------------------
+
+async function renderForwardConfig() {
+  const config = await getForwardConfig();
+  for (const input of document.querySelectorAll("#forwardConfig input[type=checkbox]")) {
+    input.checked = !!config[input.dataset.key];
+    input.addEventListener("change", async () => {
+      await setForwardConfig({ [input.dataset.key]: input.checked });
+      // No explicit save button — background.js picks this up immediately
+      // via chrome.storage.onChanged, so it applies to the very next event.
+    });
+  }
+}
+
+renderForwardConfig();
 
 renderStatus();
 renderRecentErrors();
