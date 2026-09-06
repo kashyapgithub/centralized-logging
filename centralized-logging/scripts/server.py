@@ -107,11 +107,55 @@ def row_to_dict(row, json_fields=("context", "tags")):
     return d
 
 
+# Set LOG_SERVER_QUIET=1 to suppress the terminal printout below — useful
+# if you're piping stdout somewhere and don't want the noise. On by default
+# because seeing logs land, formatted and copy-pasteable, right in the
+# terminal you started this in is most of the point of running it yourself.
+QUIET = os.environ.get("LOG_SERVER_QUIET", "0") == "1"
+
+
+def print_incoming_row(row: dict) -> None:
+    """
+    Prints one incoming log row as a clearly delimited, labeled block —
+    designed so you can select a block (or several) straight out of the
+    terminal and paste it into any AI chat with no reformatting needed.
+    """
+    if QUIET:
+        return
+
+    level = row.get("level", "info").upper()
+    app = row.get("app_name", "unknown-app")
+    ts = row.get("_printed_at", now_iso())
+
+    print("=" * 72)
+    print(f"[{ts}]  {app}  —  {level}")
+    print("-" * 72)
+    print(f"message      : {row.get('message', '')}")
+    if row.get("error_type"):
+        print(f"error_type   : {row['error_type']}")
+    if row.get("fingerprint"):
+        print(f"fingerprint  : {row['fingerprint']}")
+    if row.get("request_id"):
+        print(f"request_id   : {row['request_id']}")
+    if row.get("session_id"):
+        print(f"session_id   : {row['session_id']}")
+    context = row.get("context")
+    if context and context not in ({}, "{}"):
+        context_str = context if isinstance(context, str) else json.dumps(context)
+        print(f"context      : {context_str}")
+    if row.get("stack_trace"):
+        print("stack_trace  :")
+        for line in row["stack_trace"].splitlines():
+            print(f"  {line}")
+    print("=" * 72)
+    print()  # blank line between blocks for easy scanning/selecting
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "CentralLogServer/1.0"
 
     def log_message(self, fmt, *args):
-        pass  # keep stdout quiet; remove this override if you want request logs
+        pass  # this suppresses raw HTTP access-log lines, not the log-row printout above
 
     # -- low-level helpers ----------------------------------------------------
 
@@ -192,6 +236,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_insert_logs(self, body):
         rows = body if isinstance(body, list) else [body]
+        inserted_at = now_iso()
         conn = get_db()
         conn.executemany(
             """INSERT INTO logs
@@ -201,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
                 (
-                    now_iso(),
+                    inserted_at,
                     r.get("app_name", "unknown-app"),
                     r.get("environment", "production"),
                     r.get("host"),
@@ -225,6 +270,8 @@ class Handler(BaseHTTPRequestHandler):
         )
         conn.commit()
         conn.close()
+        for r in rows:
+            print_incoming_row({**r, "_printed_at": inserted_at})
         self._send_json(200, {"inserted": len(rows)})
 
     def _handle_recent(self, params):
@@ -382,8 +429,14 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     init_db()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"centralized-logging server listening on http://{HOST}:{PORT}")
-    print(f"database: {DB_PATH}")
+    print("=" * 72)
+    print("centralized-logging server")
+    print("=" * 72)
+    print(f"listening on : http://{HOST}:{PORT}")
+    print(f"database     : {DB_PATH}")
+    print(f"quiet mode   : {'on (LOG_SERVER_QUIET=1)' if QUIET else 'off — incoming logs print below as they arrive'}")
+    print("=" * 72)
+    print()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

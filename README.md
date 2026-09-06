@@ -30,6 +30,7 @@ Python file storing logs in a local SQLite database on your own machine.
 
 - [What each piece actually does](#what-each-piece-actually-does)
 - [How the extension and server work together](#how-the-extension-and-server-work-together)
+- [How the data is stored](#how-the-data-is-stored)
 - [Integrating into an existing project — step by step](#integrating-into-an-existing-project--step-by-step)
 - [Day-to-day usage](#day-to-day-usage)
 - [Troubleshooting](#troubleshooting)
@@ -118,17 +119,83 @@ Once both are running, three extra things become possible:
 
 ---
 
+### How reliable is the log stream, actually
+
+Worth being upfront about, since "centralized logging" can sound more
+bulletproof than a single-file, single-process tool can honestly promise.
+
+**Extension → local buffer (Path 1, the viewer):** effectively instant —
+it's capturing DevTools protocol events straight into memory in the same
+process. Reliable by construction, not much to caveat.
+
+**Extension → `server.py` (Path 2, backend forwarding):** best-effort, not
+guaranteed:
+
+- **Batching, not instant.** A send happens when either 50 events queue up
+  or a periodic alarm fires (~30s in dev/unpacked mode; Chrome enforces a
+  1-minute floor once packed). Busy tabs flush almost immediately; quiet
+  tabs can sit queued for up to that interval.
+- **No retry, no persistence.** If `server.py` isn't running when a flush
+  happens, or the request just fails, that batch is silently dropped —
+  there's no on-disk retry queue. This is deliberate: fire-and-forget,
+  kept simple, matching the "one Python file, no dependencies" goal.
+- **Service worker suspension.** Chrome can suspend the extension's
+  background process when idle. If that happens before a flush, whatever
+  was queued in memory at that instant is lost. This mainly bites sparse,
+  occasional events — a page erroring continuously will flush well before
+  it matters.
+
+**Practical takeaway:** treat this as excellent visibility while you're
+actively debugging, not a guaranteed audit trail. If one specific event
+absolutely must not be lost, the local viewer (Path 1) is the more
+trustworthy read for that exact moment, since it isn't subject to a
+network hop at all — the backend side is for pattern-spotting and history
+across a session, not for guaranteeing capture of every single event.
+
+## How the data is stored
+
+Nothing exotic — `server.py` uses Python's built-in `sqlite3` module to
+write into one file, `logs.db`, sitting next to `server.py` by default
+(override the location with `LOG_DB_PATH`).
+
+- Two tables: `logs` (every event) and `commands` (the extension's command
+  queue) — see `references/database-schema.md` for the full column layout.
+- `context` and `tags` are stored as JSON *text* inside each row (SQLite
+  has no native JSON column type) — the server decodes them back into real
+  objects in every API response, so you never see raw JSON strings when
+  querying through the CLI.
+- It's a single file, so you can inspect it directly with any SQLite tool
+  without going through the CLI at all:
+  ```bash
+  sqlite3 logs.db "select created_at, app_name, level, message from logs order by created_at desc limit 5;"
+  ```
+  or open it in a GUI browser like "DB Browser for SQLite" if you'd rather
+  click around than type SQL.
+- SQLite handles concurrent writes via file-level locking — fine for one
+  or a handful of apps logging at normal rates. It's not built for
+  high-throughput concurrent writes from dozens of processes at once, but
+  that's not the scenario this tool is meant for.
+- No encryption, no access control beyond "who can reach `127.0.0.1:4317`"
+  — appropriate for a local dev tool, not for anything containing real
+  secrets or production PII. Keep that in mind for what you put in a log's
+  `context` field.
+
 ## Integrating into an existing project — step by step
 
-### Step 1 — Get the files into your project
+### Step 1 — Get the files (anywhere — this is not a per-project install)
 
 ```bash
 git clone https://github.com/kashyapgithub/centralized-logging.git
 ```
 
-You don't need to merge this into your existing repo — it's fine sitting
-as a sibling folder. Just note the path to `centralized-logging/scripts/`
-for the steps below.
+**Where you clone this doesn't matter, and it does not need to live inside
+any particular project's folder.** `server.py` has no concept of "which
+project this is" — it's just an HTTP server. You can clone it once,
+somewhere central on your machine (`~/tools/centralized-logging`, your
+Desktop, wherever), run one server, and point every project you work on at
+it — they're told apart by the `app_name` you give each one, not by
+folder location. See [How this scales across multiple projects](#how-this-scales-across-multiple-projects)
+below.
 
 ### Step 2 — Start the server
 
@@ -221,9 +288,69 @@ python3 centralized-logging/scripts/query_logs.py recent --app your-app-name --m
 You should see it. If not, check the [Troubleshooting](#troubleshooting)
 section below.
 
+### How this scales across multiple projects
+
+You do **not** need a separate `server.py` per project. The intended
+setup is:
+
+- **One server, running once**, anywhere on your machine (see Step 1 —
+  it's not tied to any project folder).
+- **Every project gets its own `app_name`** when it creates its logger —
+  that's the only thing that tells them apart:
+  ```python
+  logger = CentralLogger(app_name="project-abc")
+  ```
+  ```js
+  const logger = new CentralLogger({ appName: 'project-xyz' });
+  ```
+- All of it lands in the same `logs.db`. Every CLI command and the
+  extension's own views filter by `--app`/`app_name`, so working on
+  project ABC never shows you noise from project XYZ — they're in the same
+  file, but never mixed in what you actually see.
+
+If you genuinely want full physical separation (a different file per
+project, not just a different name in the same file), run a second server
+with a different port and DB path:
+
+```bash
+LOG_SERVER_PORT=4318 LOG_DB_PATH=./xyz-logs.db python3 server.py
+```
+
+and point that project's logger at `http://127.0.0.1:4318` instead. Most
+people won't need this — one server, many `app_name`s, is simpler and is
+the default assumption throughout the rest of this README.
+
 ---
 
 ## Day-to-day usage
+
+**You often don't even need the CLI to copy something out.** The terminal
+running `server.py` prints every incoming log as a clearly delimited
+block the moment it arrives:
+
+```
+========================================================================
+[2026-09-06T13:14:37+00:00]  project-abc  —  ERROR
+------------------------------------------------------------------------
+message      : payment failed for user 42
+error_type   : PaymentError
+fingerprint  : fp1
+request_id   : req_789
+context      : {"order_id": "ord_123"}
+stack_trace  :
+  Traceback (most recent call last):
+    File "app.py", line 12, in charge
+      raise PaymentError()
+  PaymentError: card declined
+========================================================================
+```
+
+Just select a block (or several) straight out of that terminal and paste
+it into any AI chat — no reformatting needed. Set `LOG_SERVER_QUIET=1`
+before starting the server if you'd rather it stay silent and only use
+`query_logs.py` to look things up on demand.
+
+For pulling specific things back out later:
 
 ```bash
 # what's broken right now, across an app
