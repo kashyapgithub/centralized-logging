@@ -1,4 +1,5 @@
 import { getForwardConfig, setForwardConfig } from "./lib/forward-config.js";
+import { getAppNameForUrl } from "./lib/allowlist.js";
 
 async function renderStatus() {
   const { attachedTabs } = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
@@ -13,34 +14,35 @@ async function renderStatus() {
     return;
   }
 
-  for (const [, hostname] of attachedTabs) {
+  for (const [, appName] of attachedTabs) {
     const li = document.createElement("li");
-    li.textContent = `● ${hostname}`;
+    li.textContent = `● ${appName}`;
     listEl.appendChild(li);
   }
 }
 
-async function getCurrentHostname() {
+/**
+ * The current tab's app label, per the allowlist (see lib/allowlist.js) —
+ * NOT just the raw hostname, since two projects can share a hostname
+ * (e.g. two localhost ports) but always have distinct labels.
+ */
+async function getCurrentAppName() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.url) return null;
-  try {
-    return new URL(tab.url).hostname;
-  } catch {
-    return null;
-  }
+  return getAppNameForUrl(tab.url);
 }
 
 /**
- * Reads recent error/fatal rows for the current tab's hostname from the
+ * Reads recent error/fatal rows for the current tab's app_name from the
  * local log server.
  */
 async function renderRecentErrors() {
   const listEl = document.getElementById("errorList");
   listEl.innerHTML = "";
 
-  const hostname = await getCurrentHostname();
-  if (!hostname) {
-    listEl.innerHTML = '<li class="empty">Not on a regular web page.</li>';
+  const appName = await getCurrentAppName();
+  if (!appName) {
+    listEl.innerHTML = '<li class="empty">This site isn\'t on the allowlist.</li>';
     return;
   }
 
@@ -52,7 +54,7 @@ async function renderRecentErrors() {
 
   try {
     const params = new URLSearchParams({
-      app: hostname,
+      app: appName,
       level: "error,fatal",
       minutes: "1440",
       limit: "5",
@@ -61,7 +63,7 @@ async function renderRecentErrors() {
     const { rows } = await res.json();
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      listEl.innerHTML = `<li class="empty">No recent errors for ${hostname}.</li>`;
+      listEl.innerHTML = `<li class="empty">No recent errors for ${appName}.</li>`;
       return;
     }
     for (const row of rows) {

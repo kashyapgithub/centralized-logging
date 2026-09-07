@@ -1,6 +1,9 @@
 {
   "serverUrl": "http://127.0.0.1:4317",
-  "allowlist": [],
+  "allowlist": [
+    { "domain": "localhost:3000", "label": "project-abc" },
+    { "domain": "localhost:4000", "label": "project-xyz" }
+  ],
   "forwardConfig": {
     "console": true,
     "exceptions": true,

@@ -9,7 +9,6 @@
  * prints the result.
  */
 
-import { isAllowed } from "./allowlist.js";
 import {
   attachDebugger,
   detachDebugger,
@@ -64,15 +63,15 @@ async function executeCommand(cmd, { findTabIdByHostname, getAttachedHostnames }
 
       case "attach": {
         if (!cmd.app_name) return { status: "failed", result: { error: "app_name is required" } };
-        if (!(await isAllowed(`https://${cmd.app_name}`))) {
-          return {
-            status: "failed",
-            result: { error: `${cmd.app_name} is not in the allowlist — add it in Settings first` },
-          };
-        }
+        // No separate allowlist re-check needed here: findTabIdByHostname
+        // only ever returns tabs that background.js already validated as
+        // allowlisted at navigation time (see background.js's tabAppNames).
         const tabId = findTabIdByHostname(cmd.app_name);
         if (tabId === undefined) {
-          return { status: "failed", result: { error: `no open tab found for ${cmd.app_name}` } };
+          return {
+            status: "failed",
+            result: { error: `no open, allowlisted tab found for app_name '${cmd.app_name}'` },
+          };
         }
         await attachDebugger(tabId);
         return { status: "done", result: { tabId, attached: isAttached(tabId) } };

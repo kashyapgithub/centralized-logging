@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Central Log Capture — Settings</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; color: #1a1a1a; }
+    body { font-family: system-ui, sans-serif; max-width: 520px; margin: 24px auto; color: #1a1a1a; }
     h1 { font-size: 18px; }
     section { margin-bottom: 24px; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
@@ -13,10 +13,15 @@
       border: 1px solid #ccc; border-radius: 4px;
     }
     #domainList { list-style: none; padding: 0; margin: 8px 0; }
-    #domainList li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    #domainList li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 8px; font-size: 14px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 4px;
+    }
+    #domainList .entry-label { font-weight: 600; }
+    #domainList .entry-domain { color: #666; font-size: 12px; margin-left: 6px; }
     #domainList button { border: none; background: none; color: #c0392b; cursor: pointer; }
     .row { display: flex; gap: 8px; }
-    .row input { flex: 1; }
+    .row input { flex: 1; margin-bottom: 8px; }
     button.primary {
       background: #2563eb; color: white; border: none; padding: 8px 14px;
       border-radius: 4px; cursor: pointer;
@@ -40,13 +45,19 @@
   </section>
 
   <section>
-    <h2>Allowed domains</h2>
+    <h2>Projects</h2>
     <p class="hint">
-      The debugger only ever attaches to tabs on these domains (and their
-      subdomains). Everything else is left alone.
+      Each entry is a domain the debugger is allowed to attach to, plus a
+      label. The label becomes <code>app_name</code> on every log sent to
+      the backend — this is how two projects stay distinct even if they
+      share a hostname (e.g. two localhost ports). For a real domain like
+      <code>myapp.com</code>, subdomains are covered automatically. For
+      local dev, include the port (e.g. <code>localhost:3000</code>) so
+      different projects on different ports don't collide.
     </p>
     <div class="row">
-      <input type="text" id="newDomain" placeholder="myapp.com" />
+      <input type="text" id="newDomain" placeholder="localhost:3000 or myapp.com" />
+      <input type="text" id="newLabel" placeholder="Label, e.g. project-abc" />
       <button id="addDomain">Add</button>
     </div>
     <ul id="domainList"></ul>

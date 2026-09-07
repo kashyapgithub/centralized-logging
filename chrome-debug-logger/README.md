@@ -26,6 +26,29 @@ own app (auth tokens, cached state, whatever explains the bug), and exactly
 why it must never run on sites you didn't explicitly add. It does **not**
 run on any site by default. Add domains in the extension's Settings page.
 
+## Working on multiple projects at once
+
+Each allowlist entry is a **domain** plus a **label**. The label becomes
+`app_name` on every log this extension sends to the backend — that's how
+you tell the agent "this log is from project X":
+
+```
+Domain: localhost:3000   →  Label: project-abc
+Domain: localhost:4000   →  Label: project-xyz
+Domain: myapp.com        →  Label: myapp-prod
+```
+
+**Include the port for local projects.** A plain hostname match doesn't
+see the port, so if you allowlisted "localhost" for two different projects
+both running locally, they'd collide into one `app_name`. Writing
+`localhost:3000` vs `localhost:4000` as the domain keeps them distinct —
+the label is just what makes the result readable.
+
+Once set, the label shows up everywhere: the popup's "Currently capturing"
+list, the log viewer's project dropdown, and `query_logs.py --app <label>`.
+A real domain like `myapp.com` doesn't need a port — it also automatically
+covers subdomains (`app.myapp.com`, `api.myapp.com`, etc.).
+
 ## Install
 
 **Agent-driven setup:** see `AGENT_SETUP.md` at the repo root — a coding
@@ -41,7 +64,9 @@ step is genuinely manual: loading the extension into Chrome itself.
 4. Click **Load unpacked**, select this `chrome-debug-logger` folder
 5. Click the extension's icon → **Settings**:
    - Confirm the server URL matches what `server.py` printed on startup
-   - Add the domain(s) you want captured, e.g. `localhost`, `myapp.com`
+   - Add the domain(s) you want captured, with a label per project, e.g.
+     `localhost:3000` → `project-abc` (see "Working on multiple projects
+     at once" above for why the port matters for local dev)
 
 Tip: instead of typing into Settings, copy `config.example.json` to
 `config.local.json` and fill in real values — the extension picks it up

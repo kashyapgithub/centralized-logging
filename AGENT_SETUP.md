@@ -55,9 +55,18 @@ Edit `config.local.json`:
 ```json
 {
   "serverUrl": "http://127.0.0.1:4317",
-  "allowlist": ["localhost", "the-humans-actual-domain.com"]
+  "allowlist": [
+    { "domain": "localhost:3000", "label": "the-humans-project-name" }
+  ]
 }
 ```
+
+Include the port for local dev domains (`localhost:3000`, not just
+`localhost`) — a bare hostname match ignores the port, so if the human is
+working on more than one local project at once, they'd otherwise collide
+into a single `app_name`. The `label` is what becomes `app_name` on every
+log this project sends — pick something the human will recognize in
+`query_logs.py --app <label>` later, not the raw domain.
 
 `config.local.json` is gitignored — the extension reads it once on startup
 and seeds its settings from it automatically, but only if nothing has been

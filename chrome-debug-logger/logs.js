@@ -1,47 +1,51 @@
 /**
  * logs.js — the "copy-paste into any LLM" viewer. Polls background.js's
  * in-memory ring buffer (no local server needed) and renders it live.
+ *
+ * The dropdown lists app labels (from lib/allowlist.js), not raw
+ * hostnames — two projects sharing a hostname (e.g. two localhost ports)
+ * show up as distinct entries here, named whatever you labeled them.
  */
 
 const POLL_INTERVAL_MS = 1000;
-const HOSTNAME_REFRESH_MS = 3000;
+const APP_LIST_REFRESH_MS = 3000;
 
-const hostnameSelect = document.getElementById("hostnameSelect");
+const appSelect = document.getElementById("hostnameSelect");
 const logEl = document.getElementById("log");
 const copyBtn = document.getElementById("copyBtn");
 const clearBtn = document.getElementById("clearBtn");
 const copyStatus = document.getElementById("copyStatus");
 const filterCheckboxes = [...document.querySelectorAll("#filters input[type=checkbox]")];
 
-let currentHostname = null;
+let currentAppName = null;
 let currentRows = [];
 
 function activeTypes() {
   return new Set(filterCheckboxes.filter((cb) => cb.checked).map((cb) => cb.dataset.type));
 }
 
-async function refreshHostnames() {
+async function refreshAppList() {
   const { attachedTabs } = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
-  const hostnames = [...new Set((attachedTabs || []).map(([, hostname]) => hostname))];
+  const appNames = [...new Set((attachedTabs || []).map(([, appName]) => appName))];
 
-  const previousValue = hostnameSelect.value;
-  hostnameSelect.innerHTML = "";
-  if (hostnames.length === 0) {
+  const previousValue = appSelect.value;
+  appSelect.innerHTML = "";
+  if (appNames.length === 0) {
     const opt = document.createElement("option");
     opt.textContent = "No captured tabs open";
-    hostnameSelect.appendChild(opt);
-    currentHostname = null;
+    appSelect.appendChild(opt);
+    currentAppName = null;
     return;
   }
-  for (const hostname of hostnames) {
+  for (const appName of appNames) {
     const opt = document.createElement("option");
-    opt.value = hostname;
-    opt.textContent = hostname;
-    hostnameSelect.appendChild(opt);
+    opt.value = appName;
+    opt.textContent = appName;
+    appSelect.appendChild(opt);
   }
   // Keep the user's selection if it's still valid, otherwise pick the first.
-  hostnameSelect.value = hostnames.includes(previousValue) ? previousValue : hostnames[0];
-  currentHostname = hostnameSelect.value;
+  appSelect.value = appNames.includes(previousValue) ? previousValue : appNames[0];
+  currentAppName = appSelect.value;
 }
 
 function formatRow(row) {
@@ -100,18 +104,18 @@ function buildCopyText() {
 }
 
 async function pollLogs() {
-  if (!currentHostname) {
+  if (!currentAppName) {
     currentRows = [];
     renderRows();
     return;
   }
-  const { rows } = await chrome.runtime.sendMessage({ type: "GET_LOGS", hostname: currentHostname });
+  const { rows } = await chrome.runtime.sendMessage({ type: "GET_LOGS", appName: currentAppName });
   currentRows = rows || [];
   renderRows();
 }
 
-hostnameSelect.addEventListener("change", () => {
-  currentHostname = hostnameSelect.value;
+appSelect.addEventListener("change", () => {
+  currentAppName = appSelect.value;
   pollLogs();
 });
 
@@ -131,14 +135,14 @@ copyBtn.addEventListener("click", async () => {
 });
 
 clearBtn.addEventListener("click", async () => {
-  if (!currentHostname) return;
-  await chrome.runtime.sendMessage({ type: "CLEAR_LOGS", hostname: currentHostname });
+  if (!currentAppName) return;
+  await chrome.runtime.sendMessage({ type: "CLEAR_LOGS", appName: currentAppName });
   currentRows = [];
   renderRows();
 });
 
 // -- kick off polling loops ---------------------------------------------------
 
-refreshHostnames().then(pollLogs);
-setInterval(refreshHostnames, HOSTNAME_REFRESH_MS);
+refreshAppList().then(pollLogs);
+setInterval(refreshAppList, APP_LIST_REFRESH_MS);
 setInterval(pollLogs, POLL_INTERVAL_MS);

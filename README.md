@@ -334,6 +334,36 @@ and point that project's logger at `http://127.0.0.1:4318` instead. Most
 people won't need this — one server, many `app_name`s, is simpler and is
 the default assumption throughout the rest of this README.
 
+### Categorizing the Chrome extension's logs by project
+
+The backend side above is `app_name` you set in code. The **browser** side
+works the same way, but you set it once in the extension's Settings
+instead of in code — each allowlist entry is a **domain** to capture, and a
+**label** that becomes `app_name` for everything captured from it:
+
+| Domain you allowlist | Label you give it | Result |
+|---|---|---|
+| `localhost:3000` | `project-abc` | Every log from that port shows up as `app_name: "project-abc"` |
+| `localhost:4000` | `project-xyz` | Same server, same `logs.db`, completely separate from ABC |
+| `myapp.com` | `myapp-prod` | Covers `myapp.com` and any subdomain (`app.myapp.com`, etc.) |
+
+**This is also the fix for a real gotcha with two local projects:** if you
+just allowlisted `localhost` for two different projects both running
+locally, they'd collide — a plain hostname match doesn't see the port, so
+both would report as the same app. Including the port in the domain
+(`localhost:3000` vs `localhost:4000`) is what tells them apart; the label
+is what makes the result readable instead of you having to remember which
+port was which project.
+
+Once labeled, everything downstream just works with that name:
+`query_logs.py recent --app project-abc`, the log viewer's project
+dropdown, the popup's "recent errors" panel — all keyed off the label, not
+the raw domain.
+
+Set this via the extension's popup → Settings, or for an agent-driven
+setup, in `config.local.json`'s `allowlist` array (see
+`config.example.json` for the exact shape).
+
 ---
 
 ## Day-to-day usage

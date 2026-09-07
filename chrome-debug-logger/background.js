@@ -4,7 +4,7 @@
  * changed independently.
  */
 
-import { isAllowed, setAllowlist } from "./lib/allowlist.js";
+import { getAppNameForUrl, setAllowlist } from "./lib/allowlist.js";
 import {
   attachDebugger,
   detachDebugger,
@@ -58,8 +58,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 })();
 
 // Per-tab metadata the event handler needs but shouldn't have to fetch
-// itself on every single event.
-const tabHostnames = new Map(); // tabId -> hostname
+// itself on every single event. tabAppNames holds the LABEL resolved from
+// the allowlist (see lib/allowlist.js) — not the raw hostname — since that
+// label is what becomes `app_name` on every forwarded log, and what lets
+// two projects sharing a hostname (e.g. two localhost ports) stay distinct.
+const tabAppNames = new Map(); // tabId -> app label
 const tabSessions = new Map(); // tabId -> a rough per-navigation session id
 
 // In-memory ring buffer per tab, purely local — this is what makes the log
@@ -79,7 +82,7 @@ function recordLocal(tabId, row) {
 }
 
 const onDebuggerEvent = createEventHandler({
-  getTabHostname: (tabId) => tabHostnames.get(tabId),
+  getTabHostname: (tabId) => tabAppNames.get(tabId), // returns the app label, despite the param name kept for a smaller diff
   getSessionId: (tabId) => tabSessions.get(tabId),
   recordLocal,
   getForwardConfig: () => forwardConfigCache,
@@ -99,21 +102,21 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     return;
   }
 
-  const hostname = new URL(tab.url).hostname;
-  tabHostnames.set(tabId, hostname);
   tabSessions.set(tabId, `${tabId}-${Date.now()}`);
+  const appName = await getAppNameForUrl(tab.url); // null if this site isn't allowlisted at all
 
-  const allowed = await isAllowed(tab.url);
-  if (allowed && !isAttached(tabId)) {
-    await attachDebugger(tabId);
-  } else if (!allowed && isAttached(tabId)) {
-    await detachDebugger(tabId);
+  if (appName) {
+    tabAppNames.set(tabId, appName);
+    if (!isAttached(tabId)) await attachDebugger(tabId);
+  } else {
+    tabAppNames.delete(tabId);
+    if (isAttached(tabId)) await detachDebugger(tabId);
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   detachDebugger(tabId);
-  tabHostnames.delete(tabId);
+  tabAppNames.delete(tabId);
   tabSessions.delete(tabId);
   localLogs.delete(tabId);
 });
@@ -130,20 +133,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // -- remote commands, from query_logs.py's `command` subcommand ---------------
 
-function findTabIdByHostname(hostname) {
-  for (const [tabId, host] of tabHostnames.entries()) {
-    if (host === hostname) return tabId;
+function findTabIdByAppName(appName) {
+  for (const [tabId, name] of tabAppNames.entries()) {
+    if (name === appName) return tabId;
   }
   return undefined;
 }
 
-function getAttachedHostnames() {
-  return [...tabHostnames.entries()]
+function getAttachedAppNames() {
+  return [...tabAppNames.entries()]
     .filter(([tabId]) => isAttached(tabId))
-    .map(([, hostname]) => hostname);
+    .map(([, appName]) => appName);
 }
 
-const pollAndExecuteCommands = createCommandPoller({ findTabIdByHostname, getAttachedHostnames });
+const pollAndExecuteCommands = createCommandPoller({
+  findTabIdByHostname: findTabIdByAppName, // kept param name for a smaller diff in commands.js
+  getAttachedHostnames: getAttachedAppNames,
+});
 
 // 30s in dev/unpacked mode; Chrome enforces a 1-minute floor for packed
 // extensions, so this silently becomes a 1-minute poll if ever published.
@@ -156,8 +162,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "GET_STATUS") {
-    const attached = [...tabHostnames.entries()].filter(([tabId]) => isAttached(tabId));
-    sendResponse({ attachedTabs: attached });
+    const attached = [...tabAppNames.entries()].filter(([tabId]) => isAttached(tabId));
+    sendResponse({ attachedTabs: attached }); // [tabId, appName][]
     return true;
   }
   if (message?.type === "FLUSH_NOW") {
@@ -165,12 +171,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // keep the message channel open for the async response
   }
   if (message?.type === "GET_LOGS") {
-    const tabId = findTabIdByHostname(message.hostname);
+    const tabId = findTabIdByAppName(message.appName);
     sendResponse({ rows: tabId !== undefined ? localLogs.get(tabId) || [] : [] });
     return true;
   }
   if (message?.type === "CLEAR_LOGS") {
-    const tabId = findTabIdByHostname(message.hostname);
+    const tabId = findTabIdByAppName(message.appName);
     if (tabId !== undefined) localLogs.set(tabId, []);
     sendResponse({ ok: true });
     return true;
