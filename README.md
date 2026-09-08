@@ -285,8 +285,13 @@ to add a log line.
 2. **Load unpacked** → select the `chrome-debug-logger` folder
 3. Click the extension icon → **Settings**
 4. Confirm the server URL matches (`http://127.0.0.1:4317` by default)
-5. Add the domain(s) you're actually developing, e.g. `localhost:3000`,
-   `myapp.com` — it will not touch any other site
+5. Add the domain(s) you're actually developing, each with a **label** —
+   e.g. domain `localhost:3000`, label `your-app-name`. Use the exact same
+   name you passed as `app_name` in Step 3, so the frontend and backend
+   logs for one project line up under one name everywhere you query them.
+   Include the port for local dev domains — see
+   [Categorizing the Chrome extension's logs by project](#categorizing-the-chrome-extensions-logs-by-project)
+   for why that matters once you're running more than one project locally.
 
 Reload a tab on one of those domains — you'll see Chrome's yellow "being
 debugged" banner appear, confirming it attached.
@@ -434,9 +439,17 @@ set `LOG_SERVER_URL` to match wherever it's actually listening.
 - Extension: confirm the domain is in the allowlist (Settings page) and
   that you reloaded the tab *after* adding it — it attaches on next
   navigation, not retroactively.
-- Either way: check the extension only forwards `warn`/`error`/`fatal` to
-  the backend by design (see the table above) — a plain `console.log`
-  won't show up in `query_logs.py`, only in the extension's own viewer.
+- Extension: check the "Send to backend server" toggles in the popup — by
+  default, plain console output/exceptions/browser-log entries and network
+  *failures* forward, but successful responses and raw requests don't
+  unless you've turned "All raw network traffic" on. A `console.log` not
+  showing up in `query_logs.py` is often just that toggle, not a bug — it's
+  still visible in the extension's own local viewer regardless.
+- **Mismatched `app_name`:** the label you gave a domain in the extension's
+  Settings has to match what you're querying with. `query_logs.py recent
+  --app your-app-name` shows nothing if the extension's label for that
+  domain is actually `project-abc`. Check the popup's "Currently
+  capturing" list for the exact label in use.
 
 **The extension's "being debugged" banner won't go away / tab won't attach**
 Only one thing can hold Chrome's debugger on a tab at a time. If DevTools
