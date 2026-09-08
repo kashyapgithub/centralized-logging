@@ -30,6 +30,7 @@ Python file storing logs in a local SQLite database on your own machine.
 
 - [What each piece actually does](#what-each-piece-actually-does)
 - [How the extension and server work together](#how-the-extension-and-server-work-together)
+- [Picking exactly what gets sent — the checkboxes in the popup](#picking-exactly-what-gets-sent--the-checkboxes-in-the-popup)
 - [How the data is stored](#how-the-data-is-stored)
 - [Integrating into an existing project — step by step](#integrating-into-an-existing-project--step-by-step)
 - [Day-to-day usage](#day-to-day-usage)
@@ -83,8 +84,7 @@ running at all.
 Sending literally everything (including every successful `200 OK`) to the
 backend database would drown out the errors that actually matter. So by
 default, only a meaningful subset gets forwarded to `server.py`'s `/logs`
-endpoint — and you can change these defaults yourself, per category, from
-the extension's popup (no options-page digging required):
+endpoint:
 
 | Captured everywhere (Path 1) | Forwarded to the server by default (Path 2) |
 |---|---|
@@ -95,22 +95,15 @@ the extension's popup (no options-page digging required):
 | ✅ successful (2xx/3xx) responses | ❌ not forwarded |
 | ✅ failed (4xx/5xx) responses | ✅ forwarded |
 
-**Choosing what gets forwarded:** click the extension icon — there's a
-"Send to backend server" section with a checkbox per category (Console
-output, Uncaught exceptions, Browser log entries, Network failures, All
-raw network traffic). Toggling one takes effect immediately, on the very
-next captured event — no save button, no reload. Turning **everything**
-off just means you're using this purely as the local copy-paste viewer
-(Path 1 still works exactly the same); turning **raw network traffic** on
-means literally every request/response, including 200s, starts landing in
-`logs.db` too — useful for a deep one-off investigation, noisy to leave on
-permanently.
+These are just defaults, not fixed rules — see
+[Picking exactly what gets sent](#picking-exactly-what-gets-sent--the-checkboxes-in-the-popup)
+below for how to change any of them yourself.
 
 This is why the two paths exist separately: the **viewer** is for "let me
 see everything happening right now," and the **backend** is for "let me
-search/trace/group this later, alongside my server's own logs" — and the
-popup toggle is what lets you decide, category by category, which things
-graduate from the first list to the second.
+search/trace/group this later, alongside my server's own logs" — the
+checkboxes (see below) are what let you decide, category by category,
+which things graduate from the first list to the second.
 
 ### The two-way link
 
@@ -165,6 +158,38 @@ absolutely must not be lost, the local viewer (Path 1) is the more
 trustworthy read for that exact moment, since it isn't subject to a
 network hop at all — the backend side is for pattern-spotting and history
 across a session, not for guaranteeing capture of every single event.
+
+## Picking exactly what gets sent — the checkboxes in the popup
+
+This is a real, working control, not just a design note — **click the
+extension's icon in your Chrome toolbar** and you'll see a section titled
+**"Send to backend server"** with one checkbox per category:
+
+```
+Send to backend server
+  ☑ Console output
+  ☑ Uncaught exceptions
+  ☑ Browser log entries
+  ☑ Network failures (4xx/5xx)
+  ☐ All raw network traffic (noisy)
+```
+
+- **Checked = goes to `server.py` / `logs.db`.** Unchecked = stays local to
+  the viewer only.
+- **Takes effect immediately** on the very next captured event — no save
+  button, no reload, no reopening the popup.
+- **The local viewer (`logs.html`) is never affected by these.** It always
+  shows everything captured, regardless of what's checked here — these
+  checkboxes only control what additionally leaves the browser.
+- **Turn everything off** and you're using the extension purely as a local
+  copy-paste tool, nothing persisted anywhere.
+- **Turn "All raw network traffic" on** and literally every request and
+  response — including plain 200s — starts landing in `logs.db` too. Fine
+  for a focused, temporary investigation; noisy to leave on permanently.
+
+An agent can also preset these (skipping the clicking entirely) via
+`config.local.json`'s `forwardConfig` object — see `config.example.json`
+in the `chrome-debug-logger` folder for the exact shape.
 
 ## How the data is stored
 
